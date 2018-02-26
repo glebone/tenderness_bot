@@ -49,17 +49,17 @@ class TenderAgent extends Agent {
           openConvs[change.result.convId] = {};
 
           // demonstraiton of using the consumer profile calls
-          const consumerId = change.result.conversationDetails.participants.filter(p => p.role === 'CONSUMER')[0].id;
-          this.getUserProfile(consumerId, (e, profileResp) => {
-            this.publishEvent({
-              dialogId: change.result.convId,
-              event: {
-                type: 'ContentEvent',
-                contentType: 'text/plain',
-                message: `Just joined to conversation with ${JSON.stringify(profileResp)}`,
-              },
-            });
-          });
+          // const consumerId = change.result.conversationDetails.participants.filter(p => p.role === 'CONSUMER')[0].id;
+          // this.getUserProfile(consumerId, (e, profileResp) => {
+          //   this.publishEvent({
+          //     dialogId: change.result.convId,
+          //     event: {
+          //       type: 'ContentEvent',
+          //       contentType: 'text/plain',
+          //       message: `Just joined to conversation with ${JSON.stringify(profileResp)}`,
+          //     },
+          //   });
+          // });
           this.subscribeMessagingEvents({ dialogId: change.result.convId });
         } else if (change.type === 'DELETE') {
           // conversation was closed or transferred
