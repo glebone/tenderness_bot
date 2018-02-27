@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { log } = require('./config/bunyan');
-
 const Agent = require('./myAgent');
+const apiai = require('apiai');
 
 const tenderAgent = new Agent({
   accountId: process.env.LP_ACCOUNT_ID,
@@ -12,8 +12,29 @@ const tenderAgent = new Agent({
   accessTokenSecret: process.env.LP_AGENT_ACCESS_TOKEN_SECRET,
 });
 
-tenderAgent.on('MyCoolAgent.ContentEvnet', (contentEvent) => {
+async function dialogFlowRequest(text, messengerUserId) {
+  return new Promise((resolve, reject) => {
+    const apiaiApp = apiai(process.env.DIALOG_FLOW_TOKEN);
+    const request = apiaiApp.textRequest(text, {
+      sessionId: messengerUserId
+    });
+    request.on('response', (response) => {
+      resolve(response);
+    });
+    request.on('error', (error) => {
+      console.log(error);
+      reject(error);
+    });
+    request.end();
+  });
+}
+
+tenderAgent.on('MyCoolAgent.ContentEvnet', async (contentEvent) => {
   log.info('Content Event', contentEvent);
+  const DFResponse = await dialogFlowRequest(
+    contentEvent.message,
+    contentEvent.dialogId
+  );
   if (contentEvent.message.startsWith('#close')) {
     tenderAgent.updateConversationField({
       conversationId: contentEvent.dialogId,
@@ -22,7 +43,7 @@ tenderAgent.on('MyCoolAgent.ContentEvnet', (contentEvent) => {
         conversationState: 'CLOSE',
       }],
     });
-  } else if (contentEvent.message.startsWith('#changeToMainBot')) {
+  } else if (DFResponse.result.action == '#changeToMainBot') {
     log.info('Return to Main Bot');
     tenderAgent.updateConversationField({
       conversationId: contentEvent.dialogId,
@@ -45,7 +66,7 @@ tenderAgent.on('MyCoolAgent.ContentEvnet', (contentEvent) => {
       event: {
         type: 'ContentEvent',
         contentType: 'text/plain',
-        message: `echo tender sample: ${contentEvent.message}`,
+        message: `echo tender sample: ${DFResponse.result.fulfillment.speech}`,
       },
     });
   }
