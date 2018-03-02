@@ -4,6 +4,8 @@ const rp = require('request-promise-native');
 const _ = require('lodash');
 const dialogflow = require('./dialogflow');
 
+let tokenAndDomain;
+let gettingTokenAndDomainTimer;
 
 function getTokenAndDomainMsgHist() {
   const options = {
@@ -19,24 +21,28 @@ function getTokenAndDomainMsgHist() {
     json: true
   };
 
-  return rp(options)
+  rp(options)
     .then((parsedBody) => {
       const baseURIelement = parsedBody.csdsCollectionResponse.baseURIs.find((el) => { if (el.service === 'msgHist') return el });
-      return { token: parsedBody.bearer, domain: baseURIelement.baseURI };
+      tokenAndDomain = { token: parsedBody.bearer, domain: baseURIelement.baseURI };
+      gettingTokenAndDomainTimer = setTimeout(getTokenAndDomainMsgHist, 7200000);
     })
     .catch((err) => {
       log.error(err, 'Getting LP token error.');
+      clearTimeout(gettingTokenAndDomainTimer);
+      gettingTokenAndDomainTimer = setTimeout(getTokenAndDomainMsgHist, 7200000);
     });
 }
 
+gettingTokenAndDomainTimer = setTimeout(getTokenAndDomainMsgHist, 5000);
+
 async function getConversationsContent(conversationId) {
   try {
-    const reqData = await getTokenAndDomainMsgHist();
     const options = {
       method: 'POST',
-      uri: `https://${reqData.domain}/messaging_history/api/account/${process.env.LP_ACCOUNT_ID}/conversations/conversation/search`,
+      uri: `https://${tokenAndDomain.domain}/messaging_history/api/account/${process.env.LP_ACCOUNT_ID}/conversations/conversation/search`,
       headers: {
-        'Authorization': `Bearer ${reqData.token}`,
+        'Authorization': `Bearer ${tokenAndDomain.token}`,
         'Content-Type': 'application/json'
       },
       body: {
@@ -52,7 +58,7 @@ async function getConversationsContent(conversationId) {
 
 async function getLastMessageStatus(convId) {
   const conversationsContent = await getConversationsContent(convId);
-  if (conversationsContent) {
+  if (conversationsContent.conversationHistoryRecords && conversationsContent.conversationHistoryRecords['0'].messageStatuses) {
     return await _.maxBy(conversationsContent.conversationHistoryRecords['0'].messageStatuses, 
     (message) => { return message.seq; });
   } else {
@@ -102,38 +108,44 @@ class TenderAgent extends Agent {
     // Notification on changes in the open consversation list
     this.on('cqm.ExConversationChangeNotification', (notificationBody) => {
       notificationBody.changes.forEach(async (change) => {
-        if (change.type === 'UPSERT' && !openConvs[change.result.convId]) {
-          // new conversation for me
-          openConvs[change.result.convId] = {};
-
-          // demonstraiton of using the consumer profile calls
-          const consumerId = change.result.conversationDetails.participants.filter(p => p.role === 'CONSUMER')[0].id;
-          let message;
-          try {
-            message = await dialogflow.eventRequest('WELCOME', 123123123);
-          } catch (err) {
-            console.log(err);
-          }
-          this.getUserProfile(consumerId, (e, profileResp) => {
-            this.publishEvent({
-              dialogId: change.result.convId,
-              event: {
-                type: 'ContentEvent',
-                contentType: 'text/plain',
-                message: message.result.fulfillment.speech/* message *//* 'selected tender bot' *//* `Just joined to conversation with ${JSON.stringify(profileResp)}` */,
-              },
+        try {
+          if (change.type === 'UPSERT' && !openConvs[change.result.convId]) {
+            // new conversation for me
+            openConvs[change.result.convId] = {};
+  
+            // demonstraiton of using the consumer profile calls
+            const consumerId = change.result.conversationDetails.participants.filter(p => p.role === 'CONSUMER')[0].id;
+            let message;
+            try {
+              message = await dialogflow.eventRequest('WELCOME', 123123123);
+            } catch (err) {
+              console.log(err);
+            }
+            this.getUserProfile(consumerId, (e, profileResp) => {
+              this.publishEvent({
+                dialogId: change.result.convId,
+                event: {
+                  type: 'ContentEvent',
+                  contentType: 'text/plain',
+                  message: message.result.fulfillment.speech/* message *//* 'selected tender bot' *//* `Just joined to conversation with ${JSON.stringify(profileResp)}` */,
+                },
+              });
             });
-          });
-          const lastMessageStatus = await getLastMessageStatus(change.result.convId);
-          const maxSeq = lastMessageStatus ? lastMessageStatus : 0;
-          this.subscribeMessagingEvents({
-            fromSeq: maxSeq,
-            dialogId: change.result.convId,
-          });
-        } else if (change.type === 'DELETE') {
-          // conversation was closed or transferred
-          delete openConvs[change.result.convId];
+            // const lastMessageStatus = await getLastMessageStatus(change.result.convId);
+            // const maxSeq = lastMessageStatus ? lastMessageStatus.seq : null;
+            
+            this.subscribeMessagingEvents({
+              fromSeq: 99999999,
+              dialogId: change.result.convId,
+            });
+          } else if (change.type === 'DELETE') {
+            // conversation was closed or transferred
+            delete openConvs[change.result.convId];
+          }
+        } catch (err) {
+          console.log(err);
         }
+        
       });
     });
 
