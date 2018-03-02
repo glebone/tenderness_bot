@@ -1,6 +1,59 @@
 const { Agent } = require('node-agent-sdk');
 const { log } = require('./config/bunyan');
+const rp = require('request-promise-native');
+const _ = require('lodash');
 
+function getTokenAndDomainMsgHist() {
+  const options = {
+    method: 'POST',
+    uri: `https://va.agentvep.liveperson.net/api/account/${process.env.LP_ACCOUNT_ID}/login?v=1.3`,
+    body: {
+      "username": process.env.LP_USER_NAME,
+      "appKey": process.env.LP_AGENT_APP_KEY,
+      "secret": process.env.LP_AGENT_SECRET,
+      "accessToken": process.env.LP_AGENT_ACCESS_TOKEN,
+      "accessTokenSecret": process.env.LP_AGENT_ACCESS_TOKEN_SECRET,
+    },
+    json: true
+  };
+
+  return rp(options)
+    .then((parsedBody) => {
+      const baseURIelement = parsedBody.csdsCollectionResponse.baseURIs.find((el) => { if (el.service === 'msgHist') return el });
+      return { token: parsedBody.bearer, domain: baseURIelement.baseURI };
+    })
+    .catch((err) => {
+      log.error(err, 'Getting LP token error.');
+    });
+}
+
+async function getConversationsContent(conversationId) {
+  try {
+    const reqData = await getTokenAndDomainMsgHist();
+    const options = {
+      method: 'POST',
+      uri: `https://${reqData.domain}/messaging_history/api/account/${process.env.LP_ACCOUNT_ID}/conversations/conversation/search`,
+      headers: {
+        'Authorization': `Bearer ${reqData.token}`,
+        'Content-Type': 'application/json'
+      },
+      body: {
+        conversationId: conversationId
+      },
+      json: true // Automatically stringifies the body to JSON
+    };
+    return await rp(options);
+  } catch (err) {
+    console.log(err);
+  }
+}
+
+async function getLastMessageStatus() {
+  const conversationsContent = await getConversationsContent(change.result.convId);
+          
+  return await _.maxBy(conversationsContent.conversationHistoryRecords['0'].messageStatuses, 
+  (message) => { return message.seq; });
+}
 class TenderAgent extends Agent {
   constructor(conf) {
     super(conf);
@@ -26,7 +79,7 @@ class TenderAgent extends Agent {
 
     // Accept any routingTask (==ring)
     this.on('routing.RoutingTaskNotification', (body) => {
-      // console.log('routing Task', JSON.stringify(body));
+      // console.log('routing Task', JSON.stringify(body));  
       body.changes.forEach((c) => {
         if (c.type === 'UPSERT') {
           c.result.ringsDetails.forEach((r) => {
@@ -43,7 +96,7 @@ class TenderAgent extends Agent {
 
     // Notification on changes in the open consversation list
     this.on('cqm.ExConversationChangeNotification', (notificationBody) => {
-      notificationBody.changes.forEach((change) => {
+      notificationBody.changes.forEach(async (change) => {
         if (change.type === 'UPSERT' && !openConvs[change.result.convId]) {
           // new conversation for me
           openConvs[change.result.convId] = {};
@@ -56,11 +109,15 @@ class TenderAgent extends Agent {
               event: {
                 type: 'ContentEvent',
                 contentType: 'text/plain',
-                message: `Just joined to conversation with ${JSON.stringify(profileResp)}`,
+                message: 'selected tender bot'/* `Just joined to conversation with ${JSON.stringify(profileResp)}` */,
               },
             });
           });
-          this.subscribeMessagingEvents({ dialogId: change.result.convId });
+          const lastMessageStatus = await getLastMessageStatus();
+          this.subscribeMessagingEvents({
+            fromSeq: lastMessageStatus.seq,
+            dialogId: change.result.convId,
+          });
         } else if (change.type === 'DELETE') {
           // conversation was closed or transferred
           delete openConvs[change.result.convId];
