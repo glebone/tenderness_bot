@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { log } = require('./config/bunyan');
 const Agent = require('./myAgent');
-const apiai = require('apiai');
+const dialogflow = require('./dialogflow');
 
 const tenderAgent = new Agent({
   accountId: process.env.LP_ACCOUNT_ID,
@@ -12,26 +12,11 @@ const tenderAgent = new Agent({
   accessTokenSecret: process.env.LP_AGENT_ACCESS_TOKEN_SECRET,
 });
 
-async function dialogFlowRequest(text, messengerUserId) {
-  return new Promise((resolve, reject) => {
-    const apiaiApp = apiai(process.env.DIALOG_FLOW_TOKEN);
-    const request = apiaiApp.textRequest(text, {
-      sessionId: messengerUserId
-    });
-    request.on('response', (response) => {
-      resolve(response);
-    });
-    request.on('error', (error) => {
-      console.log(error);
-      reject(error);
-    });
-    request.end();
-  });
-}
+
 
 tenderAgent.on('MyCoolAgent.ContentEvnet', async (contentEvent) => {
   log.info('Content Event', contentEvent);
-  const DFResponse = await dialogFlowRequest(
+  const DFResponse = await dialogflow.textRequest(
     contentEvent.message,
     contentEvent.dialogId
   );

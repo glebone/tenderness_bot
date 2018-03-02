@@ -2,6 +2,8 @@ const { Agent } = require('node-agent-sdk');
 const { log } = require('./config/bunyan');
 const rp = require('request-promise-native');
 const _ = require('lodash');
+const dialogflow = require('./dialogflow');
+
 
 function getTokenAndDomainMsgHist() {
   const options = {
@@ -42,17 +44,20 @@ async function getConversationsContent(conversationId) {
       },
       json: true // Automatically stringifies the body to JSON
     };
-    return await rp(options);
+    return rp(options);
   } catch (err) {
     console.log(err);
   }
 }
 
-async function getLastMessageStatus() {
-  const conversationsContent = await getConversationsContent(change.result.convId);
-          
-  return await _.maxBy(conversationsContent.conversationHistoryRecords['0'].messageStatuses, 
-  (message) => { return message.seq; });
+async function getLastMessageStatus(convId) {
+  const conversationsContent = await getConversationsContent(convId);
+  if (conversationsContent) {
+    return await _.maxBy(conversationsContent.conversationHistoryRecords['0'].messageStatuses, 
+    (message) => { return message.seq; });
+  } else {
+    return null;
+  }
 }
 class TenderAgent extends Agent {
   constructor(conf) {
@@ -103,19 +108,26 @@ class TenderAgent extends Agent {
 
           // demonstraiton of using the consumer profile calls
           const consumerId = change.result.conversationDetails.participants.filter(p => p.role === 'CONSUMER')[0].id;
+          let message;
+          try {
+            message = await dialogflow.eventRequest('WELCOME', 123123123);
+          } catch (err) {
+            console.log(err);
+          }
           this.getUserProfile(consumerId, (e, profileResp) => {
             this.publishEvent({
               dialogId: change.result.convId,
               event: {
                 type: 'ContentEvent',
                 contentType: 'text/plain',
-                message: 'selected tender bot'/* `Just joined to conversation with ${JSON.stringify(profileResp)}` */,
+                message: message.result.fulfillment.speech/* message *//* 'selected tender bot' *//* `Just joined to conversation with ${JSON.stringify(profileResp)}` */,
               },
             });
           });
-          const lastMessageStatus = await getLastMessageStatus();
+          const lastMessageStatus = await getLastMessageStatus(change.result.convId);
+          const maxSeq = lastMessageStatus ? lastMessageStatus : 0;
           this.subscribeMessagingEvents({
-            fromSeq: lastMessageStatus.seq,
+            fromSeq: maxSeq,
             dialogId: change.result.convId,
           });
         } else if (change.type === 'DELETE') {
