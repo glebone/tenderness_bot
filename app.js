@@ -47,15 +47,21 @@ tenderAgent.on('MyCoolAgent.ContentEvnet', async (contentEvent) => {
       const skillStr = contentEvent.message
         .substring(config.DIALOG_FLOW.skillPrefix.length, contentEvent.message.length);
       if (Number.isInteger(Number.parseInt(skillStr, 10))) {
-        const skill = await dialogflow.eventRequest(skillStr, contentEvent.dialogId);
-        tenderAgent.publishEvent({
-          dialogId: contentEvent.dialogId,
-          event: {
-            type: 'ContentEvent',
-            contentType: 'text/plain',
-            message: `${skill.result.fulfillment.speech}`,
-          },
-        });
+        tenderAgent.updateConversation(
+          contentEvent.dialogId,
+          [
+            {
+              field: 'ParticipantsChange',
+              type: 'REMOVE',
+              role: 'ASSIGNED_AGENT',
+            },
+            {
+              field: 'Skill',
+              type: 'UPDATE',
+              skill: skillStr,
+            },
+          ],
+        );
       } else {
         log.error(`skill: "${skillStr}" isn't number`);
       }
