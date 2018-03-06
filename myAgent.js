@@ -27,9 +27,7 @@ class TenderAgent extends Agent {
       this.subscribeRoutingTasks({});
     });
 
-    // Accept any routingTask (==ring)
     this.on('routing.RoutingTaskNotification', (body) => {
-      // console.log('routing Task', JSON.stringify(body));
       body.changes.forEach((c) => {
         if (c.type === 'UPSERT') {
           c.result.ringsDetails.forEach((r) => {
@@ -37,50 +35,51 @@ class TenderAgent extends Agent {
               this.updateRingState({
                 ringId: r.ringId,
                 ringState: 'ACCEPTED',
-              }, (e, resp) => log.info(resp));
+              }, async (e) => {
+                if (e) log.error(e);
+                const convId = r.ringId.split('_')[0];
+                const message = await dialogflow.eventRequest('WELCOME', convId);
+                this.publishEvent({
+                  dialogId: convId,
+                  event: {
+                    type: 'ContentEvent',
+                    contentType: 'text/plain',
+                    message: message.result.fulfillment.speech,
+                  },
+                });
+                if (!openConvs[convId]) {
+                  openConvs[convId] = {};
+                  this.subscribeMessagingEvents({ fromSeq: 999999, dialogId: convId });
+                }
+              });
             }
           });
         }
       });
     });
 
-    // Notification on changes in the open consversation list
     this.on('cqm.ExConversationChangeNotification', (notificationBody) => {
       notificationBody.changes.forEach(async (change) => {
         try {
           if (change.type === 'UPSERT' && !openConvs[change.result.convId]) {
-            // new conversation for me
-            openConvs[change.result.convId] = {};
-
-            // demonstraiton of using the consumer profile calls
-            const consumerId = change.result.conversationDetails.participants.filter(p => p.role === 'CONSUMER')[0].id;
-            let message;
-            try {
-              message = await dialogflow.eventRequest('WELCOME', change.result.convId);
-            } catch (err) {
-              log.error(err);
-            }
-            this.getUserProfile(consumerId, (/* e, profileResp */) => {
-              this.publishEvent({
-                dialogId: change.result.convId,
-                event: {
-                  type: 'ContentEvent',
-                  contentType: 'text/plain',
-                  message: message.result.fulfillment.speech,
-                },
-              });
-            });
-            const lastSeq = await agentService
-              .lastSeq(this.transport.configuration, change.result.convId);
-            log.info(lastSeq, 'lastSeq');
-
-            this.subscribeMessagingEvents({ fromSeq: lastSeq, dialogId: change.result.convId });
+            const { convId } = change.result;
+            openConvs[convId] = {};
+            let lastSeq = await agentService.lastSeq(this.transport.configuration, convId);
+            // this.publishEvent({
+            //   dialogId: convId,
+            //   event: {
+            //     type: 'ContentEvent',
+            //     contentType: 'text/plain',
+            //     message: `Last sequince from histoкy ${lastSeq}`,
+            //   },
+            // });
+            if (!lastSeq) lastSeq = change.result.lastContentEventNotification.sequence;
+            this.subscribeMessagingEvents({ fromSeq: lastSeq, dialogId: convId });
           } else if (change.type === 'DELETE') {
-            // conversation was closed or transferred
             delete openConvs[change.result.convId];
           }
         } catch (err) {
-          console.log(err);
+          log.error(err);
         }
       });
     });
