@@ -40,7 +40,7 @@ tenderAgent.on('MyCoolAgent.ContentEvnet', async (contentEvent) => {
         event: {
           type: 'ContentEvent',
           contentType: 'text/plain',
-          message: `${event.result.fulfillment.speech}`,
+          message: event.result.fulfillment.speech,
         },
       });
     } else if (contentEvent.message.startsWith(config.DIALOG_FLOW.skillPrefix)) {
@@ -88,7 +88,7 @@ tenderAgent.on('MyCoolAgent.ContentEvnet', async (contentEvent) => {
         event: {
           type: 'ContentEvent',
           contentType: 'text/plain',
-          message: `echo tender sample: ${DFResponse.result.fulfillment.speech}`,
+          message: DFResponse.result.fulfillment.speech,
         },
       });
     }
