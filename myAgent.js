@@ -1,77 +1,16 @@
 const { Agent } = require('node-agent-sdk');
 const { log } = require('./config/bunyan');
-const rp = require('request-promise-native');
-const _ = require('lodash');
-const dialogflow = require('./dialogflow');
+// const config = require('./config/config');
+const dialogflow = require('./services/dialogflowService');
+const agentService = require('./services/agentService');
 
-let tokenAndDomain;
-let gettingTokenAndDomainTimer;
-
-function getTokenAndDomainMsgHist() {
-  const options = {
-    method: 'POST',
-    uri: `https://va.agentvep.liveperson.net/api/account/${process.env.LP_ACCOUNT_ID}/login?v=1.3`,
-    body: {
-      "username": process.env.LP_USER_NAME,
-      "appKey": process.env.LP_AGENT_APP_KEY,
-      "secret": process.env.LP_AGENT_SECRET,
-      "accessToken": process.env.LP_AGENT_ACCESS_TOKEN,
-      "accessTokenSecret": process.env.LP_AGENT_ACCESS_TOKEN_SECRET,
-    },
-    json: true
-  };
-
-  rp(options)
-    .then((parsedBody) => {
-      const baseURIelement = parsedBody.csdsCollectionResponse.baseURIs.find((el) => { if (el.service === 'msgHist') return el });
-      tokenAndDomain = { token: parsedBody.bearer, domain: baseURIelement.baseURI };
-      gettingTokenAndDomainTimer = setTimeout(getTokenAndDomainMsgHist, 7200000);
-    })
-    .catch((err) => {
-      log.error(err, 'Getting LP token error.');
-      clearTimeout(gettingTokenAndDomainTimer);
-      gettingTokenAndDomainTimer = setTimeout(getTokenAndDomainMsgHist, 7200000);
-    });
-}
-
-gettingTokenAndDomainTimer = setTimeout(getTokenAndDomainMsgHist, 5000);
-
-async function getConversationsContent(conversationId) {
-  try {
-    const options = {
-      method: 'POST',
-      uri: `https://${tokenAndDomain.domain}/messaging_history/api/account/${process.env.LP_ACCOUNT_ID}/conversations/conversation/search`,
-      headers: {
-        'Authorization': `Bearer ${tokenAndDomain.token}`,
-        'Content-Type': 'application/json'
-      },
-      body: {
-        conversationId: conversationId
-      },
-      json: true // Automatically stringifies the body to JSON
-    };
-    return rp(options);
-  } catch (err) {
-    console.log(err);
-  }
-}
-
-async function getLastMessageStatus(convId) {
-  const conversationsContent = await getConversationsContent(convId);
-  if (conversationsContent.conversationHistoryRecords && conversationsContent.conversationHistoryRecords['0'].messageStatuses) {
-    return await _.maxBy(conversationsContent.conversationHistoryRecords['0'].messageStatuses, 
-    (message) => { return message.seq; });
-  } else {
-    return null;
-  }
-}
 class TenderAgent extends Agent {
   constructor(conf) {
     super(conf);
     this.conf = conf;
     this.init();
     this.CONTENT_NOTIFICATION = 'MyCoolAgent.ContentEvnet';
-    this.initial = process.env.LP_INITIAL_SKILL_ID;
+    // this.initial = config.LP.initialSkillId;
   }
 
   init() {
@@ -90,7 +29,7 @@ class TenderAgent extends Agent {
 
     // Accept any routingTask (==ring)
     this.on('routing.RoutingTaskNotification', (body) => {
-      // console.log('routing Task', JSON.stringify(body));  
+      // console.log('routing Task', JSON.stringify(body));
       body.changes.forEach((c) => {
         if (c.type === 'UPSERT') {
           c.result.ringsDetails.forEach((r) => {
@@ -112,32 +51,30 @@ class TenderAgent extends Agent {
           if (change.type === 'UPSERT' && !openConvs[change.result.convId]) {
             // new conversation for me
             openConvs[change.result.convId] = {};
-  
+
             // demonstraiton of using the consumer profile calls
             const consumerId = change.result.conversationDetails.participants.filter(p => p.role === 'CONSUMER')[0].id;
             let message;
             try {
-              message = await dialogflow.eventRequest('WELCOME', 123123123);
+              message = await dialogflow.eventRequest('WELCOME', change.result.convId);
             } catch (err) {
-              console.log(err);
+              log.error(err);
             }
-            this.getUserProfile(consumerId, (e, profileResp) => {
+            this.getUserProfile(consumerId, (/* e, profileResp */) => {
               this.publishEvent({
                 dialogId: change.result.convId,
                 event: {
                   type: 'ContentEvent',
                   contentType: 'text/plain',
-                  message: message.result.fulfillment.speech/* message *//* 'selected tender bot' *//* `Just joined to conversation with ${JSON.stringify(profileResp)}` */,
+                  message: message.result.fulfillment.speech,
                 },
               });
             });
-            // const lastMessageStatus = await getLastMessageStatus(change.result.convId);
-            // const maxSeq = lastMessageStatus ? lastMessageStatus.seq : null;
-            
-            this.subscribeMessagingEvents({
-              fromSeq: 99999999,
-              dialogId: change.result.convId,
-            });
+            const lastSeq = await agentService
+              .lastSeq(this.transport.configuration, change.result.convId);
+            log.info(lastSeq, 'lastSeq');
+
+            this.subscribeMessagingEvents({ fromSeq: lastSeq, dialogId: change.result.convId });
           } else if (change.type === 'DELETE') {
             // conversation was closed or transferred
             delete openConvs[change.result.convId];
@@ -145,7 +82,6 @@ class TenderAgent extends Agent {
         } catch (err) {
           console.log(err);
         }
-        
       });
     });
 
