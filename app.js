@@ -15,21 +15,26 @@ const tenderAgent = new Agent({
 });
 
 function transferToSkill(convId, newSkill) {
-  tenderAgent.updateConversationField({
-    conversationId: convId,
-    conversationField: [
-      {
-        field: 'ParticipantsChange',
-        type: 'REMOVE',
-        role: 'ASSIGNED_AGENT',
-      },
-      {
-        field: 'Skill',
-        type: 'UPDATE',
-        skill: newSkill.toString(),
-      },
-    ],
-  });
+  tenderAgent.updateConversationField(
+    {
+      conversationId: convId,
+      conversationField: [
+        {
+          field: 'ParticipantsChange',
+          type: 'REMOVE',
+          role: 'ASSIGNED_AGENT',
+        },
+        {
+          field: 'Skill',
+          type: 'UPDATE',
+          skill: newSkill.toString(),
+        },
+      ],
+    },
+    (err) => {
+      if (err) log.error(err, 'Transfer skill');
+    },
+  );
 }
 
 function handleDialogFlowResponse(response, contentEvent) {
@@ -61,7 +66,7 @@ function handleDialogFlowResponse(response, contentEvent) {
               },
             },
             (err) => {
-              if (err) log.error(err);
+              if (err) log.error(err, 'Rich content');
             },
           );
         }
