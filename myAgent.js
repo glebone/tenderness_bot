@@ -79,7 +79,7 @@ class TenderAgent extends Agent {
             openConvs[convId] = {};
             let lastSeq = await agentService.lastSeq(this.transport.configuration, convId);
             if (!lastSeq) lastSeq = change.result.lastContentEventNotification.sequence;
-            this.subscribeMessagingEvents({ fromSeq: lastSeq, dialogId: convId });
+            this.subscribeMessagingEvents({ fromSeq: lastSeq + 1, dialogId: convId });
           } else if (change.type === 'DELETE') {
             delete openConvs[change.result.convId];
           }
