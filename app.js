@@ -78,7 +78,7 @@ function handleDialogFlowResponse(response, contentEvent) {
 }
 
 tenderAgent.on('MyCoolAgent.ContentEvent', async (contentEvent) => {
-  log.debug('Content Event', contentEvent);
+  log.info('Content Event', contentEvent);
   try {
     if (contentEvent.message.startsWith(config.DIALOG_FLOW.eventPrefix)) {
       const eventStr = contentEvent.message.substring(
