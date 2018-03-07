@@ -1,6 +1,6 @@
 const { Agent } = require('node-agent-sdk');
 const { log } = require('./config/bunyan');
-// const config = require('./config/config');
+const config = require('./config/config');
 const dialogflow = require('./services/dialogflowService');
 const agentService = require('./services/agentService');
 
@@ -9,8 +9,7 @@ class TenderAgent extends Agent {
     super(conf);
     this.conf = conf;
     this.init();
-    this.CONTENT_NOTIFICATION = 'MyCoolAgent.ContentEvnet';
-    // this.initial = config.LP.initialSkillId;
+    this.contentEventNotificationName = 'MyCoolAgent.ContentEvent';
   }
 
   init() {
@@ -18,13 +17,21 @@ class TenderAgent extends Agent {
 
     this.on('connected', () => {
       log.info('connected...', this.conf.id || '');
-      // console.log('Message: ', msg);
       this.setAgentState({ availability: 'ONLINE' });
       this.subscribeExConversations({
         agentIds: [this.agentId],
         convState: ['OPEN'],
       }, () => log.info('subscribed successfully', this.conf.id || ''));
       this.subscribeRoutingTasks({});
+      const ping = () => {
+        this.getClock({}, (err) => {
+          if (err) {
+            log.error('Error on getClock!');
+          }
+        });
+        this.pingTimeoutId = setTimeout(ping, config.LP.getClockInterval);
+      };
+      this.pingTimeoutId = setTimeout(ping, config.LP.getClockInterval);
     });
 
     this.on('routing.RoutingTaskNotification', (body) => {
@@ -39,14 +46,20 @@ class TenderAgent extends Agent {
                 if (e) log.error(e);
                 const convId = r.ringId.split('_')[0];
                 const message = await dialogflow.eventRequest('WELCOME', convId);
-                this.publishEvent({
-                  dialogId: convId,
-                  event: {
-                    type: 'ContentEvent',
-                    contentType: 'text/plain',
-                    message: message.result.fulfillment.speech,
-                  },
-                });
+                if (
+                  message.result &&
+                  message.result.fulfillment &&
+                  message.result.fulfillment.speech
+                ) {
+                  this.publishEvent({
+                    dialogId: convId,
+                    event: {
+                      type: 'ContentEvent',
+                      contentType: 'text/plain',
+                      message: message.result.fulfillment.speech,
+                    },
+                  });
+                }
                 if (!openConvs[convId]) {
                   openConvs[convId] = {};
                   this.subscribeMessagingEvents({ fromSeq: 999999, dialogId: convId });
@@ -65,14 +78,6 @@ class TenderAgent extends Agent {
             const { convId } = change.result;
             openConvs[convId] = {};
             let lastSeq = await agentService.lastSeq(this.transport.configuration, convId);
-            // this.publishEvent({
-            //   dialogId: convId,
-            //   event: {
-            //     type: 'ContentEvent',
-            //     contentType: 'text/plain',
-            //     message: `Last sequince from histoкy ${lastSeq}`,
-            //   },
-            // });
             if (!lastSeq) lastSeq = change.result.lastContentEventNotification.sequence;
             this.subscribeMessagingEvents({ fromSeq: lastSeq, dialogId: convId });
           } else if (change.type === 'DELETE') {
@@ -88,9 +93,6 @@ class TenderAgent extends Agent {
     this.on('ms.MessagingEventNotification', (body) => {
       const respond = {};
       body.changes.forEach((c) => {
-        // In the current version MessagingEventNotification are recived also without subscription
-        // Will be fixed in the next api version. So we have to check if this notification is
-        // handled by us.
         if (openConvs[c.dialogId]) {
           // add to respond list all content event not by me
           if (c.event.type === 'ContentEvent' && c.originatorId !== this.agentId) {
@@ -109,21 +111,24 @@ class TenderAgent extends Agent {
         }
       });
 
-      // publish read, and echo
       Object.keys(respond).forEach((key) => {
         const contentEvent = respond[key];
         this.publishEvent({
           dialogId: contentEvent.dialogId,
           event: { type: 'AcceptStatusEvent', status: 'READ', sequenceList: [contentEvent.sequence] },
         });
-        this.emit(this.CONTENT_NOTIFICATION, contentEvent);
+        this.emit(this.contentEventNotificationName, contentEvent);
       });
     });
 
-    // Tracing
-    // this.on('notification', msg => log.info('got message', JSON.stringify(msg)));
     this.on('error', err => log.info('got an error', err));
-    this.on('closed', data => log.info('socket closed', data));
+    this.on('closed', (data) => {
+      clearTimeout(this.pingTimeoutId);
+      log.info('socket closed', data);
+      setTimeout(() => {
+        this.reconnect(false);
+      }, config.LP.reconnectDelay);
+    });
   }
 }
 
