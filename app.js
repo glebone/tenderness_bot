@@ -1,33 +1,23 @@
 require('dotenv').config();
 const { log } = require('./config/bunyan');
-
-const lodash = require('lodash');
-
 const Agent = require('./myAgent');
+const config = require('./config/config');
+const dialogflow = require('./services/dialogflowService');
+
 
 const tenderAgent = new Agent({
-  accountId: process.env.LP_ACCOUNT_ID,
-  username: process.env.LP_USER_NAME,
-  appKey: process.env.LP_AGENT_APP_KEY,
-  secret: process.env.LP_AGENT_SECRET,
-  accessToken: process.env.LP_AGENT_ACCESS_TOKEN,
-  accessTokenSecret: process.env.LP_AGENT_ACCESS_TOKEN_SECRET,
+  accountId: config.LP.accountId,
+  username: config.LP.username,
+  appKey: config.LP.appKey,
+  secret: config.LP.secret,
+  accessToken: config.LP.accessToken,
+  accessTokenSecret: config.LP.accessTokenSecret,
 });
 
-tenderAgent.on('MyCoolAgent.ContentEvnet', (contentEvent) => {
-  log.info('Content Event', contentEvent);
-  if (lodash.isString(contentEvent.message) && contentEvent.message.startsWith('#close')) {
-    tenderAgent.updateConversationField({
-      conversationId: contentEvent.dialogId,
-      conversationField: [{
-        field: 'ConversationStateField',
-        conversationState: 'CLOSE',
-      }],
-    });
-  } else if (lodash.isString(contentEvent.message) && contentEvent.message.startsWith('#toMainBot')) {
-    log.info('Return to Main Bot');
-    tenderAgent.updateConversationField({
-      conversationId: contentEvent.dialogId,
+function transferToSkill(convId, newSkill) {
+  tenderAgent.updateConversationField(
+    {
+      conversationId: convId,
       conversationField: [
         {
           field: 'ParticipantsChange',
@@ -37,236 +27,87 @@ tenderAgent.on('MyCoolAgent.ContentEvnet', (contentEvent) => {
         {
           field: 'Skill',
           type: 'UPDATE',
-          skill: process.env.MAIN_BOT_ID,
+          skill: newSkill.toString(),
         },
       ],
-    });
-  } else {
-    tenderAgent.publishEvent({
-      dialogId: contentEvent.dialogId,
-      event: {
-        type: 'ContentEvent',
-        contentType: 'text/plain',
-        message: `echo tender sample1: ${contentEvent.message}`,
-      },
-    });
-    // tenderAgent.publishEvent({
-    //   dialogId: contentEvent.dialogId,
-    //   event: {
-    //     type: 'RichContentEvent',
-    //     content: {
-    //       type: 'vertical',
-    //       elements: [
-    //         {
-    //           type: 'text',
-    //           text: `echo routing_bot: ${contentEvent.message}`,
-    //           tooltip: 'product name (Title)',
-    //           style: {
-    //             bold: true,
-    //             size: 'large',
-    //           },
-    //         },
-    //         {
-    //           type: 'text',
-    //           text: `echo routing_bot: ${contentEvent.message}`,
-    //           tooltip: 'product name (Title)',
-    //         },
-    //        {
-    //          type: 'image',
-    //          url: 'https://i.imgur.com/ZOM7GQx.png',
-    //          caption: 'This is an example of image caption',
-    //          tooltip: 'image tooltip',
-    //        },
-    //       ],
-    //     },
-    //   },
-    // }, null, [{
-    //   type: 'ExternalId',
-    //   id: 'CARD IDENTIFIER',
-    // }], (err, res) => {
-    //   if (err) log.error(err);
-    //   log.info(res);
-    // });
-    tenderAgent.publishEvent({
-      dialogId: contentEvent.dialogId,
-      event: {
-        type: 'RichContentEvent',
-        content: {
-          type: 'vertical',
-          tag: 'list',
-          externalPlatformVersion: '1.0',
-          elements: [
-            {
-              type: 'vertical',
-              elements: [
-                {
-                  type: 'text',
-                  text: 'iPhones',
-                  tooltip: 'text tooltip',
-                  style: { bold: true, size: 'large' },
-                },
-                {
-                  type: 'horizontal',
-                  elements: [
-                    {
-                      type: 'vertical',
-                      elements: [
-                        {
-                          type: 'text',
-                          tag: 'title',
-                          text: 'iPhone X',
-                          tooltip: 'Title',
-                          style: { bold: true, size: 'large' },
-                        },
-                        {
-                          type: 'text',
-                          tag: 'subtitle',
-                          text: 'Black',
-                          tooltip: 'Black',
-                        },
-                        {
-                          type: 'button',
-                          tooltip: 'Add to cart',
-                          title: 'Add to cart',
-                          click: {
-                            actions: [
-                              {
-                                type: 'publishText',
-                                text: 'iPhone X Added',
-                              },
-                            ],
-                            metadata: [
-                              {
-                                type: 'ExternalId',
-                                id: 'iPhone X',
-                              },
-                            ],
-                          },
-                        },
-                      ],
-                    },
-                  ],
-                },
-                {
-                  type: 'horizontal',
-                  elements: [
-                    {
-                      type: 'vertical',
-                      elements: [
-                        {
-                          type: 'text',
-                          tag: 'title',
-                          text: 'iPhone 8',
-                          tooltip: 'iPhone 8',
-                          style: { bold: true, size: 'large' },
-                        },
-                        {
-                          type: 'text',
-                          tag: 'subtitle',
-                          text: 'Rose Gold',
-                          tooltip: 'Rose Gold',
-                        },
-                        {
-                          type: 'button',
-                          tooltip: 'Add to cart',
-                          title: 'Add to cart',
-                          click: {
-                            actions: [
-                              {
-                                type: 'publishText',
-                                text: 'iPhone 8 Added',
-                              },
-                            ],
-                            metadata: [
-                              {
-                                type: 'ExternalId',
-                                id: 'iPhone 8',
-                              },
-                            ],
-                          },
-                        },
-                      ],
-                    },
-                  ],
-                },
-              ],
-            },
-            {
-              type: 'vertical',
-              elements: [
-                {
-                  type: 'text',
-                  text: 'iPads',
-                  tooltip: 'iPads',
-                  style: { bold: true, size: 'large' },
-                },
-                {
-                  type: 'horizontal',
-                  elements: [
-                    {
-                      type: 'vertical',
-                      elements: [
-                        {
-                          type: 'text',
-                          tag: 'title',
-                          text: 'iPad Pro',
-                          tooltip: 'iPad Pro',
-                          style: { bold: true, size: 'large' },
-                        },
-                        {
-                          type: 'text',
-                          tag: 'subtitle',
-                          text: 'Space Grey',
-                          tooltip: 'Space Grey',
-                        },
-                        {
-                          type: 'button',
-                          tooltip: 'Add to cart',
-                          title: 'Add to cart',
-                          click: {
-                            actions: [
-                              {
-                                type: 'publishText',
-                                text: 'iPad Pro Added',
-                              },
-                            ],
-                            metadata: [
-                              {
-                                type: 'ExternalId',
-                                id: 'iPad Pro',
-                              },
-                            ],
-                          },
-                        },
-                      ],
-                    },
-                  ],
-                },
-              ],
-            },
-          ],
+    },
+    (err) => {
+      if (err) log.error(err, 'Transfer skill');
+    },
+  );
+}
+
+function handleDialogFlowResponse(response, contentEvent) {
+  if (
+    response.result.fulfillment.messages &&
+    response.result.fulfillment.messages[0] &&
+    response.result.fulfillment.messages[0].speech
+  ) {
+    tenderAgent.publishEvent(
+      {
+        dialogId: contentEvent.dialogId,
+        event: {
+          type: 'ContentEvent',
+          contentType: 'text/plain',
+          message: response.result.fulfillment.messages[0].speech,
         },
       },
-    }, null, [{
-      type: 'BusinessChatMessage',
-      multipleSelection: true,
-      receivedMessage: {
-        style: 'icon',
-        subtitle: 'this is the subtitle',
-        title: 'this is the title',
-        secondarySubtitle: 'secondary subtitle',
-        tertiarySubtitle: 'tertiarySubtitle',
+      () => {
+        if (
+          response.result.fulfillment.messages[1] &&
+          response.result.fulfillment.messages[1].payload
+        ) {
+          tenderAgent.publishEvent(
+            {
+              dialogId: contentEvent.dialogId,
+              event: {
+                type: 'RichContentEvent',
+                content: response.result.fulfillment.messages[1].payload,
+              },
+            },
+            (err) => {
+              if (err) log.error(err, 'Rich content');
+            },
+          );
+        }
       },
-      replyMessage: {
-        style: 'style',
-        subtitle: 'subtitle',
-        title: 'title',
-        secondarySubtitle: 'secondarySubtitle',
-        tertiarySubtitle: 'tertiarySubtitle',
-      },
-    }], (err, res) => {
-      if (err) log.error(err);
-      log.info(res);
-    });
+    );
+  } else {
+    log.error("Can't get correct response from dialogflow.");
+  }
+}
+
+tenderAgent.on('MyCoolAgent.ContentEvent', async (contentEvent) => {
+  log.info('Content Event', contentEvent);
+  try {
+    if (contentEvent.message.startsWith(config.DIALOG_FLOW.eventPrefix)) {
+      const eventStr = contentEvent.message.substring(
+        config.DIALOG_FLOW.eventPrefix.length,
+        contentEvent.message.length,
+      );
+      const response = await dialogflow.eventRequest(eventStr, contentEvent.dialogId);
+      handleDialogFlowResponse(response, contentEvent);
+    } else if (contentEvent.message.startsWith(config.DIALOG_FLOW.skillPrefix)) {
+      const skillStr = contentEvent.message.substring(
+        config.DIALOG_FLOW.skillPrefix.length,
+        contentEvent.message.length,
+      );
+      if (Number.isInteger(Number.parseInt(skillStr, 10))) {
+        log.info('Transferring to skill', skillStr);
+        transferToSkill(contentEvent.dialogId, skillStr);
+      } else {
+        log.error(`Skill '${skillStr}' is not an integer.`);
+      }
+    } else {
+      const response = await dialogflow.textRequest(contentEvent.message, contentEvent.dialogId);
+      if (response.result.action === config.DIALOG_FLOW.backToMainBotAction) {
+        log.info('Returning back to Main Bot');
+        transferToSkill(contentEvent.dialogId, config.LP.mainBotSkillId);
+      } else {
+        handleDialogFlowResponse(response, contentEvent);
+      }
+    }
+  } catch (err) {
+    log.error(err);
   }
 });
