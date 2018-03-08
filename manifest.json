@@ -1,0 +1,14 @@
+{
+  "name":"Local ",
+  "description":"The Local Community bot offers you hints on acts of kindness that contribute to making your local community living better and can be helpful for those who need.",
+  "image":"https://i.imgur.com/mYcP8iG.jpg",
+  "intents":[
+    {
+       "intent":"Local",
+       "utterances":[
+        "local community",
+        "contribute to local"
+      ]
+    }    
+  ]
+}
